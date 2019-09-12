@@ -1,17 +1,13 @@
 package main
 
-// We can't just use golang.org/x/build/maintner/maintnerd/apipb directly as it
-// imports the experimental franken package grpc.go4.org that isn't compatible
-// with google.golang.org/grpc. Instead we generate our own gRPC code using the
-// same api.proto file.
-//
-//go:generate bash -c "protoc -I$(go list -e -f '{{.Dir}}' golang.org/x/build/maintner/maintnerd/apipb) api.proto --go_out=plugins=grpc:internal/proto"
-
 import (
-	"context"
+	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,10 +15,7 @@ import (
 	"strconv"
 	"strings"
 
-	pb "go.tmthrgd.dev/latestgo/internal/proto"
 	"golang.org/x/mod/semver"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 )
 
 // unpackedOkay is a sentinel zero-byte file to indicate that the Go version
@@ -30,29 +23,27 @@ import (
 // golang.org/dl/internal/version.
 const unpackedOkay = ".unpacked-success"
 
+// These are the golang.org URLs we fetch the release JSON from.
+const (
+	dlFeedURL    = "https://golang.org/dl/?mode=json"
+	dlFeedAllURL = "https://golang.org/dl/?mode=json&include=all"
+)
+
+var allFlag = flag.Bool("all", false, "download all go releases since go1.8\n    includes all patch releases")
+
 func main() {
 	log.SetFlags(0)
 	log.SetPrefix("latestgo: ")
+
+	flag.Parse()
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Connect to the Golang maintner server with standard TLS validation.
-	cc, err := grpc.Dial("dns:///maintner.golang.org",
-		grpc.WithTransportCredentials(credentials.NewTLS(nil)))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	pc := pb.NewMaintnerServiceClient(cc)
-
-	// Retrieve the list of latest supported releases.
-	//
-	// "By default, ListGoReleases returns only the latest patches
-	//  of releases that are considered supported per policy."
-	resp, err := pc.ListGoReleases(context.Background(), new(pb.ListGoReleasesRequest))
+	// Retrieve the list of releases to download.
+	releases, err := listReleases()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -61,23 +52,27 @@ func main() {
 		downloaded bool
 		latest     string
 	)
-	for _, release := range resp.Releases {
-		if !validRelease(release.TagName) {
+	for _, release := range releases {
+		if !validRelease(release.Version) || versionTooOld(release.Version) {
 			continue
 		}
 
-		latest = maxVersion(latest, release.TagName)
+		// Only consider stable releases when determining the latest
+		// version.
+		if release.Stable {
+			latest = maxVersion(latest, release.Version)
+		}
 
 		// Determine if this go version has already been installed.
-		unpackedOkayPath := filepath.Join(home, "sdk", release.TagName, unpackedOkay)
+		unpackedOkayPath := filepath.Join(home, "sdk", release.Version, unpackedOkay)
 		if _, err := os.Stat(unpackedOkayPath); err == nil {
 			continue
 		}
 
 		downloaded = true
-		fmt.Printf("Downloading %s\n", release.TagName)
+		fmt.Printf("Downloading %s\n", release.Version)
 
-		if err := downloadRelease(release.TagName); err != nil {
+		if err := downloadRelease(release.Version); err != nil {
 			log.Fatal(err)
 		}
 	}
@@ -94,6 +89,52 @@ func main() {
 	if !downloaded {
 		fmt.Println("Already up to date.")
 	}
+}
+
+type releaseJSON struct {
+	Version string
+	Stable  bool
+}
+
+// listReleases returns a list of go releases from golang.org.
+//
+// If the -all flag was provided, it will return all go releases, otherwise
+// only the latest supported go releases will be returned.
+func listReleases() ([]releaseJSON, error) {
+	url := dlFeedURL
+	if *allFlag {
+		url = dlFeedAllURL
+	}
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s returned non-200 OK status code: %s",
+			resp.Request.URL.Hostname(), resp.Status)
+	}
+
+	r := io.LimitReader(resp.Body, 128<<20+1) // 128MiB
+
+	data, err := ioutil.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	if r.(*io.LimitedReader).N <= 0 {
+		return nil, fmt.Errorf("%s returned an excessively large JSON response",
+			resp.Request.URL.Hostname())
+	}
+
+	var releases []releaseJSON
+	if err := json.Unmarshal(data, &releases); err != nil {
+		return nil, err
+	}
+
+	return releases, nil
 }
 
 // downloadRelease installs go version v using golang.org/dl.
@@ -135,6 +176,15 @@ func validRelease(v string) bool {
 
 	patch, err := strconv.ParseUint(parts[2], 10, 64)
 	return err == nil && patch > 0
+}
+
+// versionTooOld returns whether the go version is too old to be downloaded
+// with the golang.org/dl/go1.X[.Y] installers.
+//
+// v must be a valid go version.
+func versionTooOld(v string) bool {
+	v = "v" + strings.TrimPrefix(v, "go")
+	return semver.Compare(v, "v1.8") < 0
 }
 
 // maxVersion returns the version string that compares greatest.

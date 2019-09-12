@@ -31,11 +31,15 @@ go binary. For example, in my `.bash_profile` I add
 `$HOME/sdk/$(cat ~/sdk/latest)/bin` to `$PATH` so `go` will always be the
 latest version of go installed.
 
+**latestgo** also provides a single flag `-all` that will download all versions
+of go since go1.8, including all patch releases, instead of only the latest
+supported versions (the highest patch release of the last two major versions).
+
 ## License
 
 [BSD 3-Clause License](LICENSE)
 
 ## Note
 
-**latestgo** uses the Golang maintner service at maintner.golang.org to
+**latestgo** uses the JSON feed at <https://golang.org/dl/?mode=json> to
 retrieve the latest supported versions.
