@@ -142,10 +142,8 @@ func downloadRelease(v string) error {
 	goToolPath := filepath.Join(runtime.GOROOT(), "bin", "go")
 	goWrapperPath := filepath.Join(gobin(), v)
 
-	// TODO(tmthrgd): module aware global go install command.
-	cmd := exec.Command(goToolPath, "get", "golang.org/dl/"+v)
+	cmd := exec.Command(goToolPath, "install", "golang.org/dl/"+v+"@latest")
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	cmd.Env = append(os.Environ(), "GO111MODULE=off")
 	if err := cmd.Run(); err != nil {
 		return err
 	}
