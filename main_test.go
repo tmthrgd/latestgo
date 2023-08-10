@@ -10,6 +10,10 @@ func TestValidRelease(t *testing.T) {
 	for _, v := range []string{
 		"go1.12",
 		"go1.12.6",
+		"go1.20",
+		"go1.20.7",
+		"go1.21.0",
+		"go1.21.8",
 	} {
 		assert.Truef(t, validRelease(v), "validRelease(%q)", v)
 	}
@@ -19,6 +23,7 @@ func TestValidRelease(t *testing.T) {
 		"go1.12.0",
 		"go1.-12.6",
 		"go1.12.-6",
+		"go1.21",
 		"go2.1",
 		"GO1",
 		"v1.12",
@@ -56,6 +61,8 @@ func TestVersionTooOld(t *testing.T) {
 		"go1.12.6",
 		"go1.13",
 		"go1.13.1",
+		"go1.20",
+		"go1.21.0",
 		"go2",
 		"go2.1",
 	} {
@@ -68,4 +75,7 @@ func TestMaxVersion(t *testing.T) {
 	assert.Equal(t, "go1.12.6", maxVersion("go1.12.6", ""))
 	assert.Equal(t, "go1.12.6", maxVersion("go1.12.6", "go1.11.11"))
 	assert.Equal(t, "go1.12.6", maxVersion("go1.11.11", "go1.12.6"))
+	assert.Equal(t, "go1.20", maxVersion("go1.20", "go1.19.6"))
+	assert.Equal(t, "go1.21.0", maxVersion("go1.20", "go1.21.0"))
+	assert.Equal(t, "go1.22.0", maxVersion("go1.19.6", "go1.22.0"))
 }

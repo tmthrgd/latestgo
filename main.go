@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -81,7 +80,7 @@ func main() {
 	// scripts to use.
 	if latest != "" {
 		latestPath := filepath.Join(home, "sdk", "latest")
-		if err := ioutil.WriteFile(latestPath, []byte(latest), 0644); err != nil {
+		if err := os.WriteFile(latestPath, []byte(latest), 0644); err != nil {
 			log.Fatal(err)
 		}
 	}
@@ -119,7 +118,7 @@ func listReleases() ([]releaseJSON, error) {
 
 	r := io.LimitReader(resp.Body, 128<<20+1) // 128MiB
 
-	data, err := ioutil.ReadAll(r)
+	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
@@ -164,16 +163,22 @@ func validRelease(v string) bool {
 		return false
 	}
 
-	if _, err := strconv.ParseUint(parts[1], 10, 64); err != nil {
+	release, err := strconv.ParseUint(parts[1], 10, 64)
+	if err != nil {
 		return false
 	}
 
 	if len(parts) == 2 {
-		return true
+		return release < 21
 	}
 
 	patch, err := strconv.ParseUint(parts[2], 10, 64)
-	return err == nil && patch > 0
+	if err != nil {
+		return false
+	}
+
+	// From go1.21.0 onwards, a patch version of .0 is included.
+	return release >= 21 || patch > 0
 }
 
 // versionTooOld returns whether the go version is too old to be downloaded
@@ -189,16 +194,17 @@ func versionTooOld(v string) bool {
 //
 // v1 and v2 must be valid go versions or empty.
 func maxVersion(v1, v2 string) string {
+	var sv1, sv2 string
 	if v1 != "" {
-		v1 = "v" + strings.TrimPrefix(v1, "go")
+		sv1 = "v" + strings.TrimPrefix(v1, "go")
 	}
 	if v2 != "" {
-		v2 = "v" + strings.TrimPrefix(v2, "go")
+		sv2 = "v" + strings.TrimPrefix(v2, "go")
 	}
-
-	v := semver.Max(v1, v2)
-	v = strings.TrimSuffix(v, ".0") // go doesn't use .0 patch versions.
-	return "go" + strings.TrimPrefix(v, "v")
+	if semver.Compare(sv1, sv2) > 0 {
+		return v1
+	}
+	return v2
 }
 
 // gobin returns the directory go get installs binaries into. It uses $GOBIN if
