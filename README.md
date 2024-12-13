@@ -3,6 +3,9 @@
 **latestgo** is a tool to automatically install the latest supported golang
 versions.
 
+**Deprecated:** This module has been deprecated and will not receive further
+updates. Use [`GOTOOLCHAIN`](https://go.dev/doc/toolchain) instead.
+
 ## Installation
 
 Installation is simple and no different to any Go tool. The only requirement is

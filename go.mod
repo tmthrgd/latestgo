@@ -1,3 +1,4 @@
+// Deprecated: Use GOTOOLCHAIN instead.
 module go.tmthrgd.dev/latestgo
 
 go 1.21
